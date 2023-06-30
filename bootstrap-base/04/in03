@@ -1,0 +1,2586 @@
+; initialize global_variables_end
+C=:global_variables_end
+D=:global_variables
+8C=D
+; initialize static_memory_end
+C=:static_memory_end
+; 0x100000 = 1MB for code
+D=x500000
+8C=D
+; initialize labels_end
+C=:labels_end
+D=:labels
+8C=D
+
+I=8S
+A=d2
+?I>A:argv_file_names
+	; use default input/output filenames
+	
+	; set :filename appropriately
+	J=:filename
+	I=:input_filename
+	C=d0
+	call :memccpy
+	
+	; open input file
+		J=:input_filename
+		I=d0
+		syscall x2
+		J=A
+		?J<0:input_file_error
+	; open output file
+		J=:output_filename
+		I=x241
+		D=x1ed
+		syscall x2
+		J=A
+		?J<0:output_file_error
+	!:second_pass_starting_point
+:argv_file_names	
+	; get filenames from command-line arguments
+	
+	; set :filename appropriately
+	I=S
+	; argv[1] is at *(rsp+16)
+	I+=d16
+	I=8I
+	J=:filename
+	C=d0
+	call :memccpy
+	
+	; open input file
+	J=S
+	; argv[1] is at *(rsp+16)
+	J+=d16
+	J=8J
+	I=d0
+	syscall x2
+	J=A
+	?J<0:input_file_error
+	; open output file
+	J=S
+	; argv[2] is at *(rsp+24)
+	J+=d24
+	J=8J
+	I=x241
+	D=x1ed
+	syscall x2
+	J=A
+	?J<0:output_file_error
+
+
+:second_pass_starting_point
+; write ELF header
+J=d4
+I=:ELF_header
+D=x78
+syscall x1
+
+:read_line
+; increment line number
+D=:line_number
+C=8D
+C+=d1
+8D=C
+
+; use rbp to store line pointer
+R=:line
+:read_line_loop
+	; read 1 byte into rbp
+	J=d3
+	I=R
+	D=d1
+	syscall x0
+	D=A
+	?D=0:eof
+	
+	; check if the character was a newline:
+	C=1R
+	D=xa
+	?C=D:read_line_loop_end
+	; check if the character was a tab:
+	D=x9
+	; if so, don't increment rbp
+	?C=D:read_line_loop
+	; check if the character was a semicolon:
+	D=';
+	; if so, it's a comment
+	?C=D:handle_comment
+	
+	R+=d1
+	!:read_line_loop
+
+	:handle_comment
+		; read out rest of line from file
+		J=d3
+		I=R
+		D=d1
+		syscall x0
+		D=A
+		?D=0:eof
+		C=1R
+		D=xa
+		; if we didn't reach the end of the line, keep going
+		?C!D:handle_comment
+		
+		!:read_line_loop_end
+:read_line_loop_end
+
+; remove whitespace (specifically, space characters) at end of line
+I=R
+:remove_terminal_whitespace_loop
+	I-=d1
+	C=1I
+	D=x20
+	?C!D:remove_terminal_whitespace_loop_end
+	; replace ' ' with a newline
+	D=xa
+	1I=D
+	!:remove_terminal_whitespace_loop
+:remove_terminal_whitespace_loop_end
+
+; check if this is a blank line
+C=:line
+D=1C
+C=xa
+?C=D:read_line
+
+C=':
+?C=D:handle_label_definition
+
+I=:line
+J=:"global"
+C=x20
+call :string=
+D=A
+?D!0:handle_global
+
+I=:line
+J=:"local"
+C=x20
+call :string=
+D=A
+?D!0:handle_local
+; arguments are treated the same as local variables
+I=:line
+J=:"argument"
+C=x20
+call :string=
+D=A
+?D!0:handle_local
+
+I=:line
+J=:"return"
+C=x20
+call :string=
+D=A
+?D!0:handle_return
+
+I=:line
+J=:"byte"
+C=x20
+call :string=
+D=A
+?D!0:handle_byte
+
+I=:line
+J=:"string"
+C=x20
+call :string=
+D=A
+?D!0:handle_string
+
+I=:line
+J=:"#line"
+C=x20
+call :string=
+D=A
+?D!0:handle_#line
+
+I=:line
+J=:"goto"
+C=x20
+call :string=
+D=A
+?D!0:handle_goto
+
+I=:line
+J=:"if"
+C=x20
+call :string=
+D=A
+?D!0:handle_if
+
+I=:line
+J=:"function"
+call :string=
+D=A
+?D!0:handle_function
+
+
+; set delimiter to newline
+C=xa
+
+I=:line
+J=:"return\n"
+call :string=
+D=A
+?D!0:handle_return
+
+; check if this is an assignment
+I=:line
+:assignment_check_loop
+	C=1I
+	D=xa
+	?C=D:assignment_check_loop_end
+	D='=
+	?C=D:handle_assignment
+	I+=d1
+	!:assignment_check_loop
+:assignment_check_loop_end
+
+; check if this is a function call (where we discard the return value)
+I=:line
+;  (check for an opening bracket not preceded by a space)
+:call_check_loop
+	C=1I
+	D=x20
+	?C=D:call_check_loop_end
+	D=xa
+	?C=D:call_check_loop_end
+	D='(
+	?C=D:handle_call
+	I+=d1
+	!:call_check_loop
+:call_check_loop_end
+
+!:bad_statement
+
+!:read_line
+
+:eof
+	C=:second_pass
+	D=1C
+	?D!0:exit_success
+	; set 2nd pass to 1
+	1C=d1
+	; make sure output file is large enough for static memory
+	; we'll use the ftruncate syscall to set the size of the file
+	J=d4
+	I=:static_memory_end
+	I=8I
+	I-=x400000
+	syscall x4d
+	; seek both files back to start
+	J=d3
+	I=d0
+	D=d0
+	syscall x8
+	J=d4
+	I=d0
+	D=d0
+	syscall x8
+	; set line number to 0
+	C=:line_number
+	8C=0
+	
+	!:second_pass_starting_point
+	
+:exit_success
+	J=d0
+	syscall x3c
+
+align
+:local_variable_name
+	reserve d8
+
+:handle_byte
+	I=:line
+	; 5 = length of "byte "
+	I+=d5
+	call :read_number
+	; store away number in rbp
+	R=A
+	; make sure number is immediately followed by newline
+	C=1I
+	D=xa
+	?C!D:bad_number
+	; make sure byte is 0-255
+	D=xff
+	?RaD:bad_byte
+	; write byte
+	I=:byte
+	1I=R
+	J=d4
+	D=d1
+	syscall x1
+	!:read_line
+:byte
+	reserve d1
+
+:handle_#line
+	I=:line
+	; 6 = length of "#line "
+	I+=d6
+	call :read_number
+	; store line number
+	D=A
+	C=:line_number
+	; subtract one so that we specify the number of the *next* line
+	D-=d1
+	8C=D
+	; check character after line number
+	C=1I
+	D=xa
+	; if it's a newline, we're done
+	?C=D:read_line
+	; otherwise, it'd better be a space
+	D=x20
+	?C!D:bad_statement
+	; set the filename
+	I+=d1
+	J=:filename
+	C=xa
+	call :memccpy
+	; we want a null-terminated, not newline-terminated filename
+	J-=d1
+	1J=0
+	!:read_line
+
+:handle_string
+	I=:line
+	; 7 = length of "string "
+	I+=d7
+	J=I
+	; find end of string
+	:string_loop
+		C=1J
+		D=xa
+		?C=D:string_loop_end
+		J+=d1
+		!:string_loop
+	:string_loop_end
+	; get length of string
+	D=J
+	D-=I
+	; output fd
+	J=d4
+	syscall x1
+	!:read_line
+	
+:handle_call
+	J=I
+	; just use the rvalue function call code
+	C=:rvalue
+	D=:line
+	8C=D
+	I=:line
+	call :rvalue_function_call
+	!:read_line
+	
+:handle_local
+	; skip ' '
+	I+=d1
+	
+	; store away pointer to variable name
+	C=:local_variable_name
+	8C=I
+	
+	; check if already defined
+	J=:local_variables
+	call :ident_lookup
+	C=A
+	?C!0:local_redeclaration
+	
+	C=:local_variable_name
+	I=8C
+	J=:local_variables_end
+	J=8J
+	call :ident_copy
+
+	; increase stack_end, store it in J
+	C=:stack_end
+	D=4C
+	D+=d8
+	4C=D
+	4J=D
+	J+=d4
+	;  store null terminator
+	1J=0
+	
+	; update :local_variables_end
+	I=:local_variables_end
+	8I=J
+	
+	; set rsp appropriately
+	C=:rbp_offset
+	J=d0
+	J-=D
+	4C=J
+
+	J=d4
+	I=:lea_rsp_[rbp_offset]
+	D=d7
+	syscall x1
+	
+	
+	; read the next line
+	!:read_line
+
+:lea_rsp_[rbp_offset]
+	x48
+	x8d
+	xa5
+:rbp_offset
+	reserve d4
+
+align
+:global_start
+	reserve d8
+:global_variable_name
+	reserve d8
+:global_variable_size
+	reserve d8
+:handle_global
+	; ignore if this is the second pass
+	C=:second_pass
+	C=1C
+	?C!0:read_line
+	
+	; skip ' '
+	I+=d1
+	
+	C=1I
+	D='9
+	?C>D:global_default_size
+		; read specific size of global
+		call :read_number
+		D=A
+		C=:global_variable_size
+		8C=D
+		; check and skip space after number
+		C=1I
+		D=x20
+		?C!D:bad_number
+		I+=d1
+		!:global_cont
+	:global_default_size
+		; default size = 8
+		C=:global_variable_size
+		D=d8
+		8C=D
+	:global_cont
+		
+	; store away pointer to variable name
+	C=:global_variable_name
+	8C=I
+	
+	; check if already defined
+	J=:global_variables
+	call :ident_lookup
+	C=A
+	?C!0:global_redeclaration
+	
+	C=:global_variable_name
+	I=8C
+	
+	J=:global_variables_end
+	J=8J
+	call :ident_copy
+	; store address
+	D=:static_memory_end
+	C=4D
+	4J=C
+	J+=d4
+	; increase static_memory_end by size
+	D=:global_variable_size
+	D=8D
+	C+=D
+	D=:static_memory_end
+	4D=C
+	; store null terminator
+	1J=0
+	; update :global_variables_end
+	I=:global_variables_end
+	8I=J
+	; go read the next line
+	!:read_line
+
+:handle_function
+	I=:line
+	; length of "function "
+	I+=d9
+	; make function name a label
+	call :add_label
+	
+	; emit prologue
+	J=d4
+	I=:function_prologue
+	D=d14
+	syscall x1
+	
+	; reset local variable table
+	D=:local_variables
+	1D=0
+	C=:local_variables_end
+	8C=D
+	
+	; reset stack_end
+	D=:stack_end
+	4D=0
+	
+	; go read the next line
+	!:read_line
+
+:function_prologue
+	; sub rsp, 8
+	x48
+	x81
+	xec
+	x08
+	x00
+	x00
+	x00
+	; mov [rsp], rbp
+	x48
+	x89
+	x2c
+	x24
+	; mov rbp, rsp
+	R=S
+	; total length: 7 + 4 + 3 = 14 bytes
+
+:function_epilogue
+	; mov rsp, rbp
+	S=R
+	; mov rbp, [rsp]
+	x48
+	x8b
+	x2c
+	x24
+	; add rsp, 8
+	x48
+	x81
+	xc4
+	x08
+	x00
+	x00
+	x00
+	; ret
+	return
+	; total length = 15 bytes
+
+:handle_label_definition
+	I=:line
+	I+=d1
+	call :add_label
+	!:read_line
+
+align
+:label_name
+	reserve d8
+; add the label in rsi to the label list (with the current pc address)
+:add_label
+	; ignore if this is the second pass
+	C=:second_pass
+	C=1C
+	?C!0:return_0
+	
+	C=:label_name
+	8C=I
+	
+	; make sure label only has identifier characters
+	:label_checking_loop
+		C=1I
+		D=xa
+		?C=D:label_checking_loop_end
+		I+=d1
+		B=C
+		call :isident
+		D=A
+		?D!0:label_checking_loop
+		!:bad_label
+	:label_checking_loop_end
+	
+	C=:label_name
+	I=8C
+	J=:labels
+	call :ident_lookup
+	C=A
+	?C!0:label_redefinition
+	
+	J=:labels_end
+	J=8J
+	C=:label_name
+	I=8C
+	call :ident_copy
+	R=J
+	
+	; figure out where in the file we are (using lseek)
+	J=d4
+	I=d0
+	D=d1
+	syscall x8
+	C=A
+	C+=x400000
+	J=R
+	; store address
+	4J=C
+	J+=d4
+	
+	; update labels_end
+	C=:labels_end
+	8C=J
+	
+	return
+
+:handle_goto
+	J=d4
+	I=:jmp_prefix
+	D=d1
+	syscall x1
+	I=:line
+	; 5 = length of "goto "
+	I+=d5
+	call :emit_label_jump_address
+	!:read_line
+:jmp_prefix
+	xe9
+
+:handle_if
+	I=:line
+	I+=d3
+	; skip term 1
+	call :go_to_space
+	I+=d1
+	; skip operator
+	call :go_to_space
+	I+=d1
+	; put second operand in rsi
+	call :set_rax_to_term
+	call :set_rsi_to_rax
+	
+	
+	I=:line
+	; length of "if "
+	I+=d3
+	; put first operand in rax
+	call :set_rax_to_term
+	; put second operand in rbx
+	call :set_rbx_to_rsi
+	; emit cmp rax, rbx
+	J=d4
+	I=:cmp_rax_rbx
+	D=d3
+	syscall x1
+	
+	I=:line
+	I+=d3
+	call :go_to_space
+	I+=d1
+	R=I
+	C=x20
+	
+	I=R
+	J=:"=="
+	call :string=
+	I=A
+	?I!0:write_je
+	
+	I=R
+	J=:"!="
+	call :string=
+	I=A
+	?I!0:write_jne
+	
+	I=R
+	J=:">"
+	call :string=
+	I=A
+	?I!0:write_jg
+	
+	I=R
+	J=:"<"
+	call :string=
+	I=A
+	?I!0:write_jl
+	
+	I=R
+	J=:">="
+	call :string=
+	I=A
+	?I!0:write_jge
+	
+	I=R
+	J=:"<="
+	call :string=
+	I=A
+	?I!0:write_jle
+	
+	I=R
+	J=:"]"
+	call :string=
+	I=A
+	?I!0:write_ja
+	
+	I=R
+	J=:"["
+	call :string=
+	I=A
+	?I!0:write_jb
+	
+	I=R
+	J=:"]="
+	call :string=
+	I=A
+	?I!0:write_jae
+	
+	I=R
+	J=:"[="
+	call :string=
+	I=A
+	?I!0:write_jbe
+	
+	!:bad_jump
+	
+	:write_je
+		J=d4
+		I=:je_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_jne
+		J=d4
+		I=:jne_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_jl
+		J=d4
+		I=:jl_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_jg
+		J=d4
+		I=:jg_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_jle
+		J=d4
+		I=:jle_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_jge
+		J=d4
+		I=:jge_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_jb
+		J=d4
+		I=:jb_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_ja
+		J=d4
+		I=:ja_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_jbe
+		J=d4
+		I=:jbe_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+	:write_jae
+		J=d4
+		I=:jae_prefix
+		D=d2
+		syscall x1
+		!:if_continue
+	
+:if_continue
+	I=:line
+	I+=d3
+	; skip term 1
+	call :go_to_space
+	I+=d1
+	; skip operator
+	call :go_to_space
+	I+=d1
+	; skip term 2
+	call :go_to_space
+	I+=d1
+	J=:"goto"
+	C=x20
+	call :string=
+	C=A
+	; make sure word after term 2 is "goto"
+	?C=0:bad_jump
+	I+=d1
+	call :emit_label_jump_address
+	!:read_line
+
+:je_prefix
+	x0f
+	x84
+:jne_prefix
+	x0f
+	x85
+:jl_prefix
+	x0f
+	x8c
+:jg_prefix
+	x0f
+	x8f
+:jle_prefix
+	x0f
+	x8e
+:jge_prefix
+	x0f
+	x8d
+:jb_prefix
+	x0f
+	x82
+:ja_prefix
+	x0f
+	x87
+:jbe_prefix
+	x0f
+	x86
+:jae_prefix
+	x0f
+	x83
+
+:cmp_rax_rbx
+	x48
+	x39
+	xd8
+
+align
+:reladdr
+	reserve d4
+
+; emit relative address (for jumping) of label in rsi
+:emit_label_jump_address
+	; address doesn't matter for first pass
+	C=:second_pass
+	C=1C
+	?C=0:jump_ignore_address
+	; look up label; store address in rbp
+	J=:labels
+	call :ident_lookup
+	C=A
+	?C=0:bad_label
+	R=4C
+:jump_ignore_address
+	
+	; first, figure out current address
+	J=d4
+	I=d0
+	D=d1
+	syscall x8
+	C=A
+	; add an additional 4 because the relative address is 4 bytes long
+	C+=x400004
+	
+	; compute relative address
+	D=d0
+	D-=C
+	D+=R
+	; store in :reladdr	
+	C=:reladdr
+	4C=D
+	; output
+	J=d4
+	I=:reladdr
+	D=d4
+	syscall x1
+	return
+
+align
+:assignment_type
+	reserve d8
+:handle_assignment
+	I-=d1
+	C=:assignment_type
+	8C=I
+	
+	I+=d2
+	C=1I
+	D=x20
+	; check for space after =
+	?C!D:bad_assignment
+	I+=d1
+	
+	; set rdi to right-hand side of assignment
+	call :set_rax_to_rvalue
+	call :set_rdi_to_rax
+	
+	J=:assignment_type
+	J=8J
+	C=1J
+	; put newline after lvalue to make parsing easier
+		D=xa
+		1J=D
+		D=x20
+		?C=D:handle_assignment_cont
+			J-=d1
+			D=xa
+			1J=D
+		:handle_assignment_cont
+	D=x20
+	?C=D:handle_plain_assignment
+	D='+
+	?C=D:handle_+=
+	D='-
+	?C=D:handle_-=
+	D='*
+	?C=D:handle_*=
+	D='/
+	?C=D:handle_/=
+	D='%
+	?C=D:handle_%=
+	D='&
+	?C=D:handle_&=
+	D='|
+	?C=D:handle_|=
+	D='^
+	?C=D:handle_^=
+	D='<
+	?C=D:handle_<=
+	D='>
+	?C=D:handle_>=
+	
+	!:bad_assignment
+
+:handle_plain_assignment
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+	
+:handle_+=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rbx_to_rdi
+	call :emit_add_rax_rbx
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+	
+:handle_-=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rbx_to_rdi
+	call :emit_sub_rax_rbx
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+	
+:handle_*=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rbx_to_rdi
+	call :emit_imul_rbx
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+	
+:handle_/=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rbx_to_rdi
+	call :emit_cqo_idiv_rbx
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+	
+:handle_%=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rbx_to_rdi
+	call :emit_cqo_idiv_rbx
+	call :set_rax_to_rdx
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+	
+:handle_&=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rbx_to_rdi
+	call :emit_and_rax_rbx
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+	
+:handle_|=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rbx_to_rdi
+	call :emit_or_rax_rbx
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+
+:handle_^=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rbx_to_rdi
+	call :emit_xor_rax_rbx
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+
+:handle_<=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rcx_to_rdi
+	call :emit_shl_rax_cl
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+	
+:handle_>=
+	I=:line
+	call :set_rax_to_rvalue
+	call :set_rcx_to_rdi
+	call :emit_shr_rax_cl
+	I=:line
+	call :set_lvalue_to_rax
+	!:read_line
+
+align
+:lvalue
+	reserve d8
+
+; set the lvalue in rsi to <rax>
+:set_lvalue_to_rax
+	C=:lvalue
+	8C=I
+	
+	; first, store away <rax> value in <rdi>
+	R=I
+	call :set_rdi_to_rax
+	I=R
+	
+	C=:lvalue
+	I=8C
+	C=1I
+	D='*
+	
+	?C=D:lvalue_deref
+		; not a dereference; just a variable
+		C=:lvalue
+		I=8C
+		call :set_rax_to_address_of_variable
+		call :set_rbx_to_rax
+		call :set_rax_to_rdi
+		call :set_[rbx]_to_rax
+		return
+	:lvalue_deref
+		C=:lvalue
+		I=8C
+		I+=d2
+		call :set_rax_to_address_of_variable
+		call :set_rbx_to_rax
+		call :set_rax_to_[rbx]
+		call :set_rbx_to_rax
+		call :set_rax_to_rdi
+		
+		C=:lvalue
+		I=8C
+		I+=d1
+		C=1I
+		
+		D='1
+		?C=D:lvalue_deref1
+		D='2
+		?C=D:lvalue_deref2
+		D='4
+		?C=D:lvalue_deref4
+		D='8
+		?C=D:lvalue_deref8
+		!:bad_assignment
+	:lvalue_deref1
+		!:set_[rbx]_to_al
+	:lvalue_deref2
+		!:set_[rbx]_to_ax
+	:lvalue_deref4
+		!:set_[rbx]_to_eax
+	:lvalue_deref8
+		!:set_[rbx]_to_rax
+
+:handle_return
+	I=:line
+	; skip "return"
+	I+=d6
+	C=1I
+	D=xa
+	?C=D:no_return_value
+	
+	; skip ' ' after return
+	I+=d1
+	
+	call :set_rax_to_rvalue
+
+	:no_return_value
+	J=d4
+	I=:function_epilogue
+	D=d15
+	syscall x1
+	
+	; go read the next line
+	!:read_line	
+
+:mov_rsp_rbp
+	S=R
+
+:ret
+	return
+
+; copy the newline-terminated identifier from rsi to rdi
+:ident_copy
+	C=1I
+	B=C
+	call :isident
+	D=A
+	?D=0:bad_identifier
+	
+	:ident_loop
+		C=1I
+		1J=C
+		I+=d1
+		J+=d1
+		D=xa
+		?C=D:ident_loop_end
+		B=C
+		call :isident
+		D=A
+		?D=0:bad_identifier
+		!:ident_loop
+	:ident_loop_end
+	return
+
+align
+:ident_lookup_i
+	reserve d8
+
+; look up identifier rsi in list rdi
+; returns address of whatever's right after the identifier in the list, or 0 if not found
+:ident_lookup
+	C=:ident_lookup_i
+	8C=I
+	
+	:ident_lookup_loop
+		; check if reached the end of the table
+		C=1J
+		?C=0:return_0
+		I=:ident_lookup_i
+		I=8I
+		call :ident=
+		C=A
+		; move past terminator of identifier in table
+		:ident_finish_loop
+			D=1J
+			J+=d1
+			A=xa
+			?D!A:ident_finish_loop
+		; check if this was it
+		?C!0:return_J
+		; nope. keep going
+		; skip over address:
+		J+=d4
+		!:ident_lookup_loop
+		
+; can the character in rbx appear in an identifier?
+:isident
+	A='0
+	?B<A:return_0
+	; note: 58 = '9' + 1
+	A=d58
+	?B<A:return_1
+	A='A
+	?B<A:return_0
+	; note: 91 = 'z' + 1
+	A=d91
+	?B<A:return_1
+	A='z
+	?B>A:return_0
+	; 96 = 'a' - 1
+	A=d96
+	?B>A:return_1
+	A='_
+	?B=A:return_1
+	!:return_0
+
+; set <rax> to the term in rsi
+:set_rax_to_term
+	R=I
+	
+	C=1I
+	D=''
+	?C=D:term_number
+	D='.
+	?C=D:term_label
+	D='*
+	?C=D:term_dereference
+	D='&
+	?C=D:term_addressof
+	D='~
+	?C=D:term_bitwise_not
+	D=d58
+	?C<D:term_number
+	; (fallthrough)
+; set <rax> to the variable in rsi
+:set_rax_to_variable
+	; variable
+	call :set_rax_to_address_of_variable
+	call :set_rbx_to_rax
+	call :set_rax_to_[rbx]
+	return
+	
+:term_label
+	C=:second_pass
+	C=1C
+	; skip looking up label on first pass; just use whatever's in rsi
+	?C=0:set_rax_to_immediate
+	; move past .
+	I+=d1
+	J=:labels
+	call :ident_lookup
+	C=A
+	?C=0:bad_label
+	; set rax to label value
+	I=4C
+	!:set_rax_to_immediate
+
+align
+:rvalue
+	reserve d8
+	
+; set <rax> to the rvalue in rsi
+:set_rax_to_rvalue
+	; store pointer to rvalue
+	C=:rvalue
+	8C=I
+	
+	J=I
+	:rvalue_loop
+		C=1J
+		D='(
+		?C=D:rvalue_function_call
+		D=x20
+		?C=D:rvalue_binary_op
+		D=xa
+		; no space or opening bracket; this must be a term
+		?C=D:set_rax_to_term
+		J+=d1
+		!:rvalue_loop
+
+align
+:rvalue_function_arg
+	reserve d8
+:rvalue_function_arg_offset
+	reserve d4
+
+:rvalue_function_call
+	I=J
+	I+=d1
+	C=1I
+	D=')
+	?C=D:function_call_no_arguments
+	
+	C=:rvalue_function_arg_offset
+	; set arg offset to -16 (to skip over stack space for return address and rbp)
+	D=xfffffffffffffff0
+	4C=D
+	
+	:rvalue_function_loop
+		C=:rvalue_function_arg
+		8C=I
+		; set <rax> to argument
+		call :set_rax_to_term
+		; set <[rsp-arg_offset]> to rax
+		; first, output prefix
+		J=d4
+		I=:mov_[rsp_offset]_rax_prefix
+		D=d4
+		syscall x1
+		; now decrement offset, and output it
+		I=:rvalue_function_arg_offset
+		C=4I
+		C-=d8
+		4I=C
+		J=d4
+		D=d4
+		syscall x1
+		
+		C=:rvalue_function_arg
+		I=8C
+		; skip over argument
+		:rvalue_function_arg_loop
+			C=1I
+			D=',
+			?C=D:rvalue_function_next_arg
+			D=')
+			?C=D:rvalue_function_loop_end
+			D=xa
+			; no closing bracket
+			?C=D:bad_call
+			I+=d1
+			!:rvalue_function_arg_loop
+		:rvalue_function_next_arg
+		; skip comma
+		I+=d1
+		C=1I
+		D=x20
+		; make sure there's a space after the comma
+		?C!D:bad_call
+		; skip space
+		I+=d1
+		
+		; handle the next argument
+		!:rvalue_function_loop
+	:rvalue_function_loop_end
+	:function_call_no_arguments
+	
+	I+=d1
+	C=1I
+	D=xa
+	; make sure there's nothing after the closing bracket
+	?C!D:bad_term
+	
+	C=:second_pass
+	C=1C
+	?C=0:ignore_function_address
+	; look up function name
+	I=:rvalue
+	I=8I
+	J=:labels
+	call :ident_lookup
+	C=A
+	?C=0:bad_function
+	; read address
+	I=4C
+	:ignore_function_address
+	call :set_rax_to_immediate
+	; write call rax
+	J=d4
+	I=:call_rax
+	D=d2
+	syscall x1
+	; we're done!
+	
+	return
+
+:mov_[rsp_offset]_rax_prefix
+	x48
+	x89
+	x84
+	x24
+	
+:call_rax
+	xff
+	xd0
+	
+:binary_op
+	reserve d1
+:rvalue_binary_op
+	; move past ' '
+	J+=d1
+	; store binary op
+	D=1J
+	C=:binary_op
+	1C=D
+	
+	; make sure space follows operator
+	J+=d1
+	C=1J
+	D=x20
+	?C!D:bad_term
+	; set rsi to second operand
+	J+=d1
+	I=J
+	call :set_rax_to_term
+	call :set_rsi_to_rax
+	
+	; now set rax to first operand
+	I=:rvalue
+	I=8I
+	call :set_rax_to_term
+	
+	; and combine
+	C=:binary_op
+	C=1C
+	
+	D='+
+	?C=D:rvalue_add
+	
+	D='-
+	?C=D:rvalue_sub
+	
+	D='*
+	?C=D:rvalue_mul
+	
+	D='/
+	?C=D:rvalue_div
+	
+	D='%
+	?C=D:rvalue_rem
+	
+	D='&
+	?C=D:rvalue_and
+	
+	D='|
+	?C=D:rvalue_or
+	
+	D='^
+	?C=D:rvalue_xor
+	
+	D='<
+	?C=D:rvalue_shl
+	
+	D='>
+	?C=D:rvalue_shr
+	
+	!:bad_term
+
+:rvalue_add
+	call :set_rbx_to_rsi
+	!:emit_add_rax_rbx
+
+:rvalue_sub
+	call :set_rbx_to_rsi
+	!:emit_sub_rax_rbx
+	
+:rvalue_mul
+	call :set_rbx_to_rsi
+	!:emit_imul_rbx
+	
+:rvalue_div
+	call :set_rbx_to_rsi
+	!:emit_cqo_idiv_rbx
+
+:rvalue_rem
+	call :set_rbx_to_rsi
+	call :emit_cqo_idiv_rbx
+	call :set_rax_to_rdx
+	return
+
+:rvalue_and
+	call :set_rbx_to_rsi
+	!:emit_and_rax_rbx
+
+:rvalue_or
+	call :set_rbx_to_rsi
+	!:emit_or_rax_rbx
+
+:rvalue_xor
+	call :set_rbx_to_rsi
+	!:emit_xor_rax_rbx
+
+:rvalue_shl
+	call :set_rcx_to_rsi
+	!:emit_shl_rax_cl
+
+:rvalue_shr
+	call :set_rcx_to_rsi
+	!:emit_shr_rax_cl
+	
+; set <rax> to address of variable in rsi
+:set_rax_to_address_of_variable
+	J=:local_variables
+	R=I
+	call :ident_lookup
+	C=A
+	?C=0:try_global
+		; it's a local variable
+		; read the offset from <rbp>
+		D=4C
+		; put negated offset in rbp
+		R=d0
+		R-=D
+		
+		; lea rax, [rbp+
+		J=d4
+		I=:lea_rax_rbp_offset_prefix
+		D=d3
+		syscall x1
+		
+		; offset]
+		J=d4
+		I=:imm64
+		4I=R
+		D=d4
+		syscall x1
+		
+		return
+	:try_global
+		I=R
+		J=:global_variables
+		call :ident_lookup
+		C=A
+		?C=0:bad_variable
+		; it's a global variable
+		; get its address
+		C=4C
+		
+		; put address in rax
+		I=C
+		!:set_rax_to_immediate
+		
+:number_is_negative
+	reserve d1
+
+:term_number
+	call :read_number
+	I=A
+	!:set_rax_to_immediate
+
+:term_bitwise_not
+	I+=d1
+	call :set_rax_to_term
+	J=d4
+	I=:not_rax
+	D=d3
+	syscall x1
+	return
+:not_rax
+	x48
+	xf7
+	xd0
+
+:term_dereference_size
+	reserve d1
+	
+:term_dereference
+	I+=d1
+	D=1I
+	C=:term_dereference_size
+	1C=D
+	I+=d1
+	call :set_rax_to_variable
+	call :set_rbx_to_rax
+	call :zero_rax
+	C=:term_dereference_size
+	C=1C
+	
+	D='1
+	?C=D:set_al_to_[rbx]
+	D='2
+	?C=D:set_ax_to_[rbx]
+	D='4
+	?C=D:set_eax_to_[rbx]
+	D='8
+	?C=D:set_rax_to_[rbx]
+	
+	!:bad_term
+
+:term_addressof
+	I+=d1
+	!:set_rax_to_address_of_variable
+
+
+; set rax to the number in the string at rsi
+:read_number
+	C=1I
+	D=''
+	?C=D:read_char
+	D='-
+	; set rdx to 0 if number is positive, 1 if negative
+	?C=D:read_number_negative
+	D=d0
+	!:read_number_cont
+	:read_number_negative
+	D=d1
+	I+=d1
+	:read_number_cont
+	; store away negativity
+	C=:number_is_negative
+	1C=D
+	; check if number starts with 0-9
+	C=1I
+	D='9
+	?C>D:bad_number
+	D='0
+	?C<D:bad_number
+	?C=D:number_starting_with0
+	; it's a decimal number
+	; rbp will store the number
+	R=d0
+	:decimal_number_loop
+		C=1I
+		D='9
+		?C>D:decimal_number_loop_end
+		D='0
+		?C<D:decimal_number_loop_end
+		C-=D
+		; multiply by 10
+		B=d10
+		A=R
+		mul
+		R=A
+		; add this digit
+		R+=C
+		
+		I+=d1
+		!:decimal_number_loop
+	:decimal_number_loop_end
+	!:read_number_output
+
+:read_char
+	I+=d1
+	R=1I
+	I+=d1
+	!:read_number_output
+
+:number_starting_with0
+	I+=d1
+	C=1I	
+	D='x
+	?C=D:read_hex_number
+	; otherwise, it should just be 0
+	R=d0
+	!:read_number_output	
+
+:read_hex_number
+	I+=d1
+	; rbp will store the number
+	R=d0
+	:hex_number_loop
+		C=1I
+		D='0
+		?C<D:hex_number_loop_end
+		D=d58
+		?C<D:hex_number_0123456789
+		D='a
+		?C<D:hex_number_loop_end
+		D='f
+		?C>D:hex_number_loop_end
+		; one of the digits a-f
+		D=xffffffffffffffa9
+		!:hex_number_digit
+		:hex_number_0123456789
+		D=xffffffffffffffd0
+		:hex_number_digit
+		C+=D
+		; shift left by 4
+		R<=d4
+		; add digit
+		R+=C
+		I+=d1
+		!:hex_number_loop
+	:hex_number_loop_end
+	!:read_number_output
+	
+:read_number_output
+	; first, make sure number is followed by space/newline/appropriate punctuation
+	C=1I
+	D=x20
+	?C=D:read_number_valid
+	D=',
+	?C=D:read_number_valid
+	D=')
+	?C=D:read_number_valid
+	D=xa
+	?C=D:read_number_valid
+	!:bad_number
+:read_number_valid
+	; we now have the *unsigned* number in rbp. take the sign into consideration
+	C=:number_is_negative
+	D=1C
+	?D=0:number_not_negative
+		; R = -R
+		C=R
+		R=d0
+		R-=C
+	:number_not_negative
+	; finally, return
+	A=R
+	return
+	
+	
+
+; set <rax> to the immediate in rsi.
+:set_rax_to_immediate
+	C=:imm64
+	8C=I
+		
+	; write prefix
+	J=d4
+	D=d2
+	I=:mov_rax_imm64_prefix
+	syscall x1
+	
+	; write immediate
+	J=d4
+	D=d8
+	I=:imm64
+	syscall x1
+	return
+
+:zero_rax
+	J=d4
+	I=:xor_eax_eax
+	D=d2
+	syscall x1
+	return
+:xor_eax_eax
+	x31
+	xc0
+
+:set_rbx_to_rax
+	J=d4
+	I=:mov_rbx_rax
+	D=d3
+	syscall x1
+	return
+:mov_rbx_rax
+	B=A
+	
+:set_rbx_to_rsi
+	J=d4
+	I=:mov_rbx_rsi
+	D=d3
+	syscall x1
+	return
+:mov_rbx_rsi
+	B=I
+
+:set_rbx_to_rdi
+	J=d4
+	I=:mov_rbx_rdi
+	D=d3
+	syscall x1
+	return
+:mov_rbx_rdi
+	B=J
+
+:set_rcx_to_rsi
+	J=d4
+	I=:mov_rcx_rsi
+	D=d3
+	syscall x1
+	return
+:mov_rcx_rsi
+	C=I
+	
+:set_rcx_to_rdi
+	J=d4
+	I=:mov_rcx_rdi
+	D=d3
+	syscall x1
+	return
+:mov_rcx_rdi
+	C=J
+
+:set_rax_to_rdx
+	J=d4
+	I=:mov_rax_rdx
+	D=d3
+	syscall x1
+	return
+:mov_rax_rdx
+	A=D
+
+:set_rax_to_rdi
+	J=d4
+	I=:mov_rax_rdi
+	D=d3
+	syscall x1
+	return
+:mov_rax_rdi
+	A=J
+	
+:set_rsi_to_rax
+	J=d4
+	I=:mov_rsi_rax
+	D=d3
+	syscall x1
+	return
+:mov_rsi_rax
+	I=A
+
+:set_rdi_to_rax
+	J=d4
+	I=:mov_rdi_rax
+	D=d3
+	syscall x1
+	return
+:mov_rdi_rax
+	J=A
+
+:set_rax_to_[rbx]
+	J=d4
+	I=:mov_rax_[rbx]
+	D=d3
+	syscall x1
+	return
+:mov_rax_[rbx]
+	x48
+	x8b
+	x03
+	
+:set_eax_to_[rbx]
+	J=d4
+	I=:mov_eax_[rbx]
+	D=d2
+	syscall x1
+	return
+:mov_eax_[rbx]
+	x8b
+	x03
+	
+:set_ax_to_[rbx]
+	J=d4
+	I=:mov_ax_[rbx]
+	D=d3
+	syscall x1
+	return
+:mov_ax_[rbx]
+	x66
+	x8b
+	x03
+	
+:set_al_to_[rbx]
+	J=d4
+	I=:mov_al_[rbx]
+	D=d2
+	syscall x1
+	return
+:mov_al_[rbx]
+	x8a
+	x03
+
+
+:set_[rbx]_to_rax
+	J=d4
+	I=:mov_[rbx]_rax
+	D=d3
+	syscall x1
+	return
+:mov_[rbx]_rax
+	x48
+	x89
+	x03
+	
+:set_[rbx]_to_eax
+	J=d4
+	I=:mov_[rbx]_eax
+	D=d2
+	syscall x1
+	return
+:mov_[rbx]_eax
+	x89
+	x03
+	
+:set_[rbx]_to_ax
+	J=d4
+	I=:mov_[rbx]_ax
+	D=d3
+	syscall x1
+	return
+:mov_[rbx]_ax
+	x66
+	x89
+	x03
+	
+:set_[rbx]_to_al
+	J=d4
+	I=:mov_[rbx]_al
+	D=d2
+	syscall x1
+	return
+:mov_[rbx]_al
+	x88
+	x03
+
+	
+:mov_rax_imm64_prefix
+	x48
+	xb8
+
+:emit_add_rax_rbx
+	J=d4
+	I=:add_rax_rbx
+	D=d3
+	syscall x1
+	return
+:add_rax_rbx
+	x48
+	x01
+	xd8
+	
+:emit_sub_rax_rbx
+	J=d4
+	I=:sub_rax_rbx
+	D=d3
+	syscall x1
+	return
+:sub_rax_rbx
+	x48
+	x29
+	xd8
+
+:emit_and_rax_rbx
+	J=d4
+	I=:and_rax_rbx
+	D=d3
+	syscall x1
+	return
+:and_rax_rbx
+	x48
+	x21
+	xd8
+
+:emit_or_rax_rbx
+	J=d4
+	I=:or_rax_rbx
+	D=d3
+	syscall x1
+	return
+:or_rax_rbx
+	x48
+	x09
+	xd8
+
+:emit_xor_rax_rbx
+	J=d4
+	I=:xor_rax_rbx
+	D=d3
+	syscall x1
+	return
+:xor_rax_rbx
+	x48
+	x31
+	xd8
+
+:emit_shl_rax_cl
+	J=d4
+	I=:shl_rax_cl
+	D=d3
+	syscall x1
+	return
+:shl_rax_cl
+	x48
+	xd3
+	xe0
+
+:emit_shr_rax_cl
+	J=d4
+	I=:shr_rax_cl
+	D=d3
+	syscall x1
+	return
+:shr_rax_cl
+	x48
+	xd3
+	xe8
+
+:emit_imul_rbx
+	J=d4
+	I=:imul_rbx
+	D=d3
+	syscall x1
+	return	
+:imul_rbx
+	x48
+	xf7
+	xeb
+
+:emit_cqo_idiv_rbx
+	J=d4
+	I=:cqo_idiv_rbx
+	D=d5
+	syscall x1
+	return
+:cqo_idiv_rbx
+	x48
+	x99
+	x48
+	xf7
+	xfb
+
+align
+:imm64
+	reserve d8
+
+; prefix for lea rax, [rbp+IMM32]
+:lea_rax_rbp_offset_prefix
+	x48
+	x8d
+	x85
+
+:input_filename
+	str in04
+	x0
+
+:output_filename
+	str out04
+	x0
+
+:input_file_error
+	B=:input_file_error_message
+	!:general_error
+
+:input_file_error_message
+	str Couldn't open input file.
+	xa
+	x0
+
+:output_file_error
+	B=:output_file_error_message
+	!:general_error
+
+:output_file_error_message
+	str Couldn't open output file.
+	xa
+	x0
+
+:bad_identifier
+	B=:bad_identifier_error_message
+	!:program_error
+
+:bad_identifier_error_message
+	str Bad identifier.
+	xa
+	x0
+
+:bad_label
+	B=:bad_label_error_message
+	!:program_error
+
+:bad_label_error_message
+	str Bad label.
+	xa
+	x0
+
+:bad_variable
+	B=:bad_variable_error_message
+	!:program_error
+
+:bad_variable_error_message
+	str No such variable.
+	xa
+	x0
+
+:bad_function
+	B=:bad_function_error_message
+	!:program_error
+
+:bad_function_error_message
+	str No such function.
+	xa
+	x0
+
+:bad_byte
+	B=:bad_byte_error_message
+	!:program_error
+
+:bad_byte_error_message
+	str Byte not in range 0-255.
+	xa
+	x0
+
+:bad_number
+	B=:bad_number_error_message
+	!:program_error
+
+:bad_number_error_message
+	str Bad number.
+	xa
+	x0
+
+:bad_assignment
+	B=:bad_assignment_error_message
+	!:program_error
+
+:bad_assignment_error_message
+	str Bad assignment.
+	xa
+	x0
+	
+:bad_term
+	B=:bad_term_error_message
+	!:program_error
+
+:bad_term_error_message
+	str Bad term.
+	xa
+	x0
+
+:bad_statement
+	B=:bad_statement_error_message
+	!:program_error
+
+:bad_statement_error_message
+	str Bad statement.
+	xa
+	x0
+
+:bad_jump
+	B=:bad_jump_error_message
+	!:program_error
+
+:bad_jump_error_message
+	str Bad jump.
+	xa
+	x0
+	
+:bad_call
+	B=:bad_call_error_message
+	!:program_error
+
+:bad_call_error_message
+	str Bad function call.
+	xa
+	x0
+
+:label_redefinition
+	B=:label_redefinition_error_message
+	!:program_error
+
+:label_redefinition_error_message
+	str Label redefinition.
+	xa
+	x0
+
+:global_redeclaration
+	B=:global_redeclaration_error_message
+	!:program_error
+
+:global_redeclaration_error_message
+	str Global variable declared twice.
+	xa
+	x0
+
+:local_redeclaration
+	B=:local_redeclaration_error_message
+	!:program_error
+
+:local_redeclaration_error_message
+	str Local variable declared twice.
+	xa
+	x0
+
+:general_error
+	call :eputs
+	J=d1
+	syscall x3c
+
+:program_error
+	R=B
+	
+	B=:filename
+	call :eputs
+	B=:":"
+	call :eputs
+	
+	D=:line_number
+	D=8D
+	B=D
+	call :eputn
+	
+	B=:line_number_separator
+	call :eputs
+	
+	B=R
+	call :eputs
+	J=d1
+	syscall x3c
+
+:":"
+	str :
+	x0
+
+:line_number_separator
+	str :
+	x20
+	x0
+	
+:strlen
+	I=B
+	D=B
+	:strlen_loop
+	C=1I
+	?C=0:strlen_ret
+	I+=d1
+	!:strlen_loop
+	:strlen_ret
+	I-=D
+	A=I
+	return
+
+; check if strings in rdi and rsi are equal, up to terminator in rcx
+:string=
+	D=1I
+	A=1J
+	?D!A:return_0
+	?D=C:return_1
+	I+=d1
+	J+=d1
+	!:string=
+
+; check if strings in rdi and rsi are equal, up to the first non-identifier character
+:ident=
+	D=1I
+	B=D
+	call :isident
+	; I ended
+	?A=0:ident=_I_end
+	
+	D=1J
+	B=D
+	call :isident
+	; J ended, but I didn't
+	?A=0:return_0
+	
+	; we haven't reached the end of either
+	D=1I
+	A=1J
+	?D!A:return_0
+	I+=d1
+	J+=d1
+	!:ident=
+:ident=_I_end
+	D=1J
+	B=D
+	call :isident
+	; check if J also ended
+	?A=0:return_1
+	; J didn't end
+	!:return_0
+	
+:return_0
+	A=d0
+	return
+:return_1
+	A=d1
+	return
+:return_2
+	A=d2
+	return
+:return_3
+	A=d3
+	return
+:return_4
+	A=d4
+	return
+:return_5
+	A=d5
+	return
+:return_6
+	A=d6
+	return
+:return_7
+	A=d7
+	return
+:return_8
+	A=d8
+	return
+:return_J
+	A=J
+	return
+	
+; write the character in rbx to the file in rdi.
+:fputc
+	C=B
+	I=S
+	I-=d1
+	1I=C
+	D=d1
+	syscall x1
+	return
+
+; write the string in rbx to stderr
+:eputs
+	J=B
+	call :strlen
+	D=A
+	I=J
+	J=d2
+	syscall x1
+	return
+	
+; write rbx in decimal to stderr
+:eputn
+	I=B
+	J=S
+	J-=d1
+	:eputn_loop
+		D=d0
+		; divide by 10
+		B=d10
+		A=I
+		div
+		; quotient is new number
+		I=A
+		; add remainder to string
+		D+='0
+		1J=D
+		J-=d1
+		?I!0:eputn_loop
+	J+=d1
+	D=S
+	D-=J
+	I=J
+	J=d2
+	syscall x1
+	return
+
+; copy rdx bytes from rsi to rdi.
+; this copies from the left: if you're doing an overlapped copy, rsi should be greater than rdi
+:memcpy
+	?D=0:return_0
+	A=1I
+	1J=A
+	I+=d1
+	J+=d1
+	D-=d1
+	!:memcpy
+	
+; copy from rdi to rsi, until byte cl is reached 
+:memccpy
+	D=1I
+	1J=D
+	I+=d1
+	J+=d1
+	?D!C:memccpy
+	return
+
+; advance rsi to the next space or newline character
+:go_to_space
+	C=1I
+	D=xa
+	?C=D:return_0
+	D=x20
+	?C=D:return_0
+	I+=d1
+	!:go_to_space
+
+:"global"
+	str global
+	x20
+:"argument"
+	str argument
+	x20
+:"local"
+	str local
+	x20
+:"return"
+	str return
+	x20
+:"return\n"
+	str return
+	xa
+:"byte"
+	str byte
+	x20
+:"string"
+	str string
+	x20
+:"#line"
+	str #line
+	x20
+:"goto"
+	str goto
+	x20
+:"if"
+	str if
+	x20
+:"function"
+	str function
+	x20
+:"=="
+	str ==
+	x20
+:"!="
+	str !=
+	x20
+:">"
+	str >
+	x20
+:"<"
+	str <
+	x20
+:"<="
+	str <=
+	x20
+:">="
+	str >=
+	x20
+:"["
+	str [
+	x20
+:"]"
+	str ]
+	x20
+:"[="
+	str [=
+	x20
+:"]="
+	str ]=
+	x20
+
+:zero
+	x0
+
+; put a 0 byte before the line (this is important for removing whitespace at the end of the line,
+; specifically, we don't want this to be a space character)
+x0
+:line
+	reserve d1000
+	
+align
+:global_variables_end
+	reserve d8
+:static_memory_end
+	reserve d8
+:local_variables_end
+	reserve d8
+:stack_end
+	reserve d8
+:labels_end
+	reserve d8
+:line_number
+	reserve d8
+:filename
+	reserve d80
+:global_variables
+	reserve d50000
+:local_variables
+	reserve d20000
+:labels
+	reserve d200000
+:second_pass
+	reserve d1
+
+:ELF_header
+x7f
+x45
+x4c
+x46
+x02
+x01
+x01
+
+reserve d9
+
+x02
+x00
+
+x3e
+x00
+
+x01
+x00
+x00
+x00
+
+x78
+x00
+x40
+x00
+x00
+x00
+x00
+x00
+
+x40
+x00
+x00
+x00
+x00
+x00
+x00
+x00
+
+reserve d12
+
+x40
+x00
+x38
+x00
+x01
+x00
+x00
+x00
+x00
+x00
+x00
+x00
+
+x01
+x00
+x00
+x00
+
+x07
+x00
+x00
+x00
+
+x78
+x00
+x00
+x00
+x00
+x00
+x00
+x00
+
+x78
+x00
+x40
+x00
+x00
+x00
+x00
+x00
+
+reserve d8
+
+x00
+x00
+x20
+x00
+x00
+x00
+x00
+x00
+
+x00
+x00
+x20
+x00
+x00
+x00
+x00
+x00
+
+x00
+x10
+x00
+x00
+x00
+x00
+x00
+x00
+
+; NOTE: we shouldn't end the file with a reserve; we don't handle that properly	

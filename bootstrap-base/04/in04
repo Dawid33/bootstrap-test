@@ -1,0 +1,130 @@
+main()
+
+function main
+	puts(.str_hello_world)
+	putc(10) ; newline
+	syscall(0x3c, 0)
+
+:str_hello_world
+	string Hello, world!
+	byte 0
+
+function strlen
+	argument s
+	local c
+	local p
+	p = s
+	:strlen_loop
+		if *1p == 0 goto strlen_loop_end
+		p += 1
+		goto strlen_loop
+	:strlen_loop_end
+	return p - s
+
+function putc
+	argument c
+	syscall(1, 1, &c, 1)
+	return
+
+function puts
+	argument s
+	local len
+	len = strlen(s)
+	syscall(1, 1, s, len)
+	return
+
+function syscall
+	; I've done some testing, and this should be okay even if
+	; rbp-56 goes beyond the end of the stack.
+	; mov rax, [rbp-16]
+	byte 0x48
+	byte 0x8b
+	byte 0x85
+	byte 0xf0
+	byte 0xff
+	byte 0xff
+	byte 0xff
+	; mov rdi, rax
+	byte 0x48
+	byte 0x89
+	byte 0xc7
+	
+	; mov rax, [rbp-24]
+	byte 0x48
+	byte 0x8b
+	byte 0x85
+	byte 0xe8
+	byte 0xff
+	byte 0xff
+	byte 0xff
+	; mov rsi, rax
+	byte 0x48
+	byte 0x89
+	byte 0xc6
+	
+	; mov rax, [rbp-32]
+	byte 0x48
+	byte 0x8b
+	byte 0x85
+	byte 0xe0
+	byte 0xff
+	byte 0xff
+	byte 0xff
+	; mov rdx, rax
+	byte 0x48
+	byte 0x89
+	byte 0xc2
+	
+	; mov rax, [rbp-40]
+	byte 0x48
+	byte 0x8b
+	byte 0x85
+	byte 0xd8
+	byte 0xff
+	byte 0xff
+	byte 0xff
+	; mov r10, rax
+	byte 0x49
+	byte 0x89
+	byte 0xc2
+	
+	; mov rax, [rbp-48]
+	byte 0x48
+	byte 0x8b
+	byte 0x85
+	byte 0xd0
+	byte 0xff
+	byte 0xff
+	byte 0xff
+	; mov r8, rax
+	byte 0x49
+	byte 0x89
+	byte 0xc0
+	
+	; mov rax, [rbp-56]
+	byte 0x48
+	byte 0x8b
+	byte 0x85
+	byte 0xc8
+	byte 0xff
+	byte 0xff
+	byte 0xff
+	; mov r9, rax
+	byte 0x49
+	byte 0x89
+	byte 0xc1
+	
+	; mov rax, [rbp-8]
+	byte 0x48
+	byte 0x8b
+	byte 0x85
+	byte 0xf8
+	byte 0xff
+	byte 0xff
+	byte 0xff
+	
+	; syscall
+	byte 0x0f
+	byte 0x05
+	
+	return

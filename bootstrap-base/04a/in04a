@@ -1,0 +1,3 @@
+#define H Hello,
+#include test_inc
+H W!

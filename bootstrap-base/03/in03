@@ -1,0 +1,35 @@
+B=:hello_world
+call :puts
+; exit code 0
+J=d0
+syscall x3c
+
+:hello_world
+str Hello, world!
+xa
+x0
+
+; output null-terminated string in rbx
+:puts
+	R=B
+	call :strlen
+	D=A
+	I=R
+	J=d1
+	syscall d1
+	return
+
+; calculate length of string in rbx
+:strlen
+	; keep pointer to start of string
+	D=B
+	I=B
+	:strlen_loop
+	C=1I
+	?C=0:strlen_loop_end
+	I+=d1
+	!:strlen_loop
+	:strlen_loop_end
+	I-=D
+	A=I	
+	return

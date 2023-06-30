@@ -1,0 +1,3679 @@
+// open input file
+im
+--IF
+JA
+zA
+IA
+im
+##2.
+sy
+// open output file
+im
+--OF
+JA
+im
+##241.
+IA
+im
+##1ed.
+DA
+im
+##2.
+sy
+::2p  where the second pass starts from
+// write ELF header
+im
+##4.
+JA    output fd
+im
+##400000.  address of ELF header in this executable
+IA
+im
+##78.  length
+DA
+im
+##1.  write
+sy
+// read next line
+::rl
+// first, increment line number
+im
+--L#
+BA
+lq
+BA
+im
+##1.
++B
+BA
+im
+--L#
+xc
+sq
+// okay, now read the line
+im
+--LI
+RA    rbp pointer to line buffer
+::rL  read loop
+im
+##3.  input file descriptor
+JA
+IR    where to read into
+im
+##1.
+DA    read 1 byte
+im
+##0.  syscall 0 (read)
+sy
+// check how many bytes were read
+BA
+im
+##1.
+jg   if 1 greater than number of bytes read
+:-ef    end of file
+BR
+DR   pointer to character we just read
+zA
+lb
+BA
+im
+##9.  '\t'
+je
+:-rL  ignore tabs
+BD
+im
+##1.
++B
+RA   increment pointer
+BD
+zA
+lb
+BA
+im
+##a. ascii '\n'
+jn
+:-rL  keep looping
+// subtract 1 from rbp because we don't care about the newline
+im
+##ffffffffffffffff.  -1
+BR
++B
+RA
+// we now have a full line from the file in ::LI
+// the pointer to the end of the line is in rbp
+// look at the first character
+im
+--LI
+BA
+zA
+lb
+BA
+im
+##3b.  ascii ';'
+je    if it's a comment,
+:-rl  jump back to read the next line
+im
+##a.  ascii '\n'
+je    if it's a blank line,
+:-rl  jump back to read the next line
+im
+##3a.  ascii ':'
+je
+:-:l   label definition
+im
+##3f.  ascii '?'
+je
+:-?j   conditional jump
+im
+##21.  ascii '!'
+je
+:-jj   unconditional jump
+im
+##78.  ascii 'x'
+je
+:-#b   literal byte
+im
+##27.  ascii '
+je
+:-#b   literal byte
+im
+##31.  ascii '1'
+je
+:-1=   store byte
+im
+##32.  ascii '2'
+je
+:-2=   store word
+im
+##34.  ascii '4'
+je
+:-4=   store dword
+im
+##38.  ascii '8'
+je
+:-8=   store qword
+im
+##7e.  ascii '~'
+je
+:-~x   bitwise not
+// look at the second character
+im
+##1.
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+##2b.  ascii '+'
+je
+:-+=   X+=Y
+im
+##2d.  ascii '-'
+je
+:--=   X-=Y
+im
+##26.  ascii '&'
+je
+:-&=   X&=Y
+im
+##7c.  ascii '|'
+je
+:-|=   X|=Y
+im
+##5e.  ascii '^'
+je
+:-^=   X^=Y
+im
+##3c.  ascii '<'
+je
+:-<=   X<=C / X<=imm
+im
+##3e.  ascii '>'
+je
+:->=   X>=C / X>=imm
+im
+##5d.  ascii ']'
+je
+:-]=   X]=C / X]=imm
+im
+##3d.  ascii '='
+je
+:-x=   X=imm / X=:label / X=nY
+im
+##20.  ascii ' '
+CA     set ' ' as terminator
+im
+--CL  "call"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-cl
+im
+--SY  "sycall"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-sy
+im
+--ST  "str"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-st
+im
+--RE  "reserve"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-re
+im
+##a.
+CA   set '\n' as terminator
+im
+--RT  "return"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-rt
+im
+--AL  "align"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-al
+im
+--U*  "mul"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-u*
+im
+--S*  "imul"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-s*
+im
+--U/  "div"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-u/
+im
+--S/  "idiv"
+IA
+im
+--LI
+JA
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-s/
+jm
+:-!i
+// handle += instruction
+::+=
+im
+--=?
+cl
+// put operand 1 in rbx,
+im
+--B1
+cl
+// operand 2 in rax
+im
+--A2
+cl
+// emit 'add rax, rbx'
+im
+--+B
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// put rax in operand 1
+im
+--1A
+cl
+jm
+:-rl  next line
+::+B
++B
+// handle -= instruction
+::-=
+im
+--=?
+cl
+// put operand 1 in rbx,
+im
+--B1
+cl
+// operand 2 in rax
+im
+--A2
+cl
+// emit 'neg rax'
+im
+--nA
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// emit 'add rax, rbx'
+im
+--+B
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// put rax in operand 1
+im
+--1A
+cl
+jm
+:-rl next line
+::nA
+nA
+// deal with bitwise and
+::&=
+im
+--=?
+cl
+// put operand 1 in rbx,
+im
+--B1
+cl
+// operand 2 in rax
+im
+--A2
+cl
+// emit 'and rax, rbx'
+im
+--&B
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// put rax in operand 1
+im
+--1A
+cl
+jm
+:-rl  next line
+::&B
+&B
+// deal with bitwise or
+::|=
+im
+--=?
+cl
+// put operand 1 in rbx,
+im
+--B1
+cl
+// operand 2 in rax
+im
+--A2
+cl
+// emit 'or rax, rbx'
+im
+--|B
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// put rax in operand 1
+im
+--1A
+cl
+jm
+:-rl  next line
+::|B
+|B
+// deal with bitwise xor
+::^=
+im
+--=?
+cl
+// put operand 1 in rbx,
+im
+--B1
+cl
+// operand 2 in rax
+im
+--A2
+cl
+// emit 'xor rax, rbx'
+im
+--^B
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// put rax in operand 1
+im
+--1A
+cl
+jm
+:-rl  next line
+::^B
+^B
+// deal with left shift
+::<=
+im
+--=?
+cl
+im
+--A1  put operand 1 in rax
+cl
+// look at 2nd operand (line[3])
+im
+##3.
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+##43. ascii 'C'
+je
+:-<c  non-constant shift
+// write shl rax, imm8 prefix
+im
+--<I
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// now write immediate. calculate number
+im
+##3.
+BA
+im
+--LI
++B
+BA
+im
+--nu
+cl
+// we now have the shift amount in rax. write it to the file
+BA
+im
+--wb
+cl
+im
+--1A  put rax back in operand 1
+cl
+jm
+:-rl  next line
+::<I
+<I
+// deal with right shift
+::>=
+im
+--=?
+cl
+im
+--A1  put operand 1 in rax
+cl
+// look at 2nd operand (line[3])
+im
+##3.
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+##43. ascii 'C'
+je
+:->c  non-constant shift
+// write shr rax, imm8 prefix
+im
+-->I
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// now write immediate. calculate number
+im
+##3.
+BA
+im
+--LI
++B
+BA
+im
+--nu
+cl
+// we now have the shift amount in rax. write it to the file
+BA
+im
+--wb
+cl
+im
+--1A  put rax back in operand 1
+cl
+jm
+:-rl  next line
+::>I
+>I
+// deal with arithmetic right shift
+::]=
+im
+--=?
+cl
+im
+--A1  put operand 1 in rax
+cl
+// look at 2nd operand (line[3])
+im
+##3.
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+##43. ascii 'C'
+je
+:-]c  non-constant shift
+// write sar rax, imm8 prefix
+im
+--]I
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+// now write immediate. calculate number
+im
+##3.
+BA
+im
+--LI
++B
+BA
+im
+--nu
+cl
+// we now have the shift amount in rax. write it to the file
+BA
+im
+--wb
+cl
+im
+--1A  put rax back in operand 1
+cl
+jm
+:-rl  next line
+::]I
+]I
+// left shift by cl
+::<c
+im
+--<C
+IA
+im
+##3.
+DA
+im
+--wr
+cl      emit 'shl rax, cl'
+im
+--1A  put rax back in operand 1
+cl
+jm
+:-rl  next line
+::<C
+<C
+// right shift by cl
+::>c
+im
+-->C
+IA
+im
+##3.
+DA
+im
+--wr
+cl      emit 'shr rax, cl'
+im
+--1A  put rax back in operand 1
+cl
+jm
+:-rl  next line
+::>C
+>C
+// arithmetic right shift by cl
+::]c
+im
+--]C
+IA
+im
+##3.
+DA
+im
+--wr
+cl      emit 'sar rax, cl'
+im
+--1A  put rax back in operand 1
+cl
+jm
+:-rl  next line
+::]C
+]C
+// deal with set immediate (e.g. "A=d3, B=:label, C=1B")
+::x=
+im
+##2.
+BA
+im
+--LI
++B
+BA
+zA
+lb    get char following '='
+BA
+im
+##3a.  ascii ':'
+je
+:-=:   set to label
+im
+##31.  ascii '1'
+je
+:-=1   read 1 byte
+im
+##32.  ascii '2'
+je
+:-=2   read 2 bytes
+im
+##34.  ascii '4'
+je
+:-=4   read 4 bytes
+im
+##38.  ascii '8'
+je
+:-=8   read 8 bytes
+im
+##78.  ascii 'x'
+je
+:-=#
+im
+##64.  ascii 'd'
+je
+:-=#
+im
+##27.  ascii '
+je
+:-=#
+// register transfer. start by writing 48 89
+im
+--tx
+IA
+im
+##2.
+DA
+im
+--wr
+cl
+// get index of first register
+im
+--LI
+BA
+zA
+lb
+BA
+im
+--r#
+cl
+DA
+// get index of second register
+im
+##2.
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+--r#
+cl
+<I
+03  shift left by 3
+BA
+im
+##c0.
+|B    or with 0xc0
+BD
+|B    or with dest
+BA
+im
+--wb   write that byte
+cl
+jm
+:-rl  next line
+::tx
+48
+89
+// get register index of rbx
+::r#
+im
+##41. 'A'
+je
+:-r0
+im
+##42. 'B'
+je
+:-r3
+im
+##43. 'C'
+je
+:-r1
+im
+##44. 'D'
+je
+:-r2
+im
+##49. 'I'
+je
+:-r6
+im
+##4a. 'J'
+je
+:-r7
+im
+##52. 'R'
+je
+:-r5
+im
+##53. 'S'
+je
+:-r4
+jm
+:-!r
+::=#
+// it's a number.
+im
+##2.
+BA
+im
+--LI
++B
+BA
+im
+--nu
+cl
+BA  put number in rbx
+im
+--im  emit "mov rax, (immediate)"
+cl
+im
+--1A  transfer immediate to output
+cl
+jm
+:-rl  next line
+// deal with set to label
+::=:
+im
+##2. add 2 line pointer to get pointer to label name
+BA
+im
+--LI
++B
+BA
+im
+--ll
+cl     look up label name
+BA
+im
+--im
+cl     put label value in rax
+im
+--1A   transfer label value to output
+cl
+jm
+:-rl   next line
+// deal with load byte
+::=1
+im
+--B2
+cl    put address register in rbx
+im
+--A0
+cl     clear rax first.
+im
+--lb
+IA
+im
+##2.
+DA
+im
+--wr
+cl   emit 'mov al, byte [rbx]'
+im
+--1A
+cl    put rax in output
+jm
+:-rl
+// deal with load word
+::=2
+im
+--B2
+cl    put address register in rbx
+im
+--A0
+cl     clear rax first.
+im
+--lw
+IA
+im
+##3.
+DA
+im
+--wr
+cl   emit 'mov ax, word [rbx]'
+im
+--1A
+cl    put rax in output
+jm
+:-rl
+// deal with load dword
+::=4
+im
+--B2
+cl    put address register in rbx
+im
+--A0
+cl     clear rax first.
+im
+--ld
+IA
+im
+##2.
+DA
+im
+--wr
+cl   emit 'mov eax, dword [rbx]'
+im
+--1A
+cl    put rax in output
+jm
+:-rl
+// deal with load qword
+::=8
+im
+--B2
+cl    put address register in rbx
+im
+--A0
+cl     clear rax first.
+im
+--lq
+IA
+im
+##3.
+DA
+im
+--wr
+cl   emit 'mov rax, qword [rbx]'
+im
+--1A
+cl    put rax in output
+jm
+:-rl
+// set rbx to register referred to by line[1], i.e. deal with the address of a store instruction
+::s@
+im
+##1.
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+jm
+:-Br
+// deal with store byte
+::1=
+im
+--s@   put address in rbx
+cl
+im
+--A2    put value in rax
+cl
+im
+--sb
+IA
+im
+##2.
+DA
+im
+--wr   store
+cl
+jm
+:-rl  read next line
+// deal with store word
+::2=
+im
+--s@   put address in rbx
+cl
+im
+--A2    put value in rax
+cl
+im
+--sw
+IA
+im
+##3.
+DA
+im
+--wr   store
+cl
+jm
+:-rl  read next line
+// deal with store dword
+::4=
+im
+--s@   put address in rbx
+cl
+im
+--A2    put value in rax
+cl
+im
+--sd
+IA
+im
+##2.
+DA
+im
+--wr   store
+cl
+jm
+:-rl  read next line
+// deal with store qword
+::8=
+im
+--s@   put address in rbx
+cl
+im
+--A2    put value in rax
+cl
+im
+--sq
+IA
+im
+##3.
+DA
+im
+--wr   store
+cl
+jm
+:-rl  read next line
+::lb
+lb
+::lw
+lw
+::ld
+ld
+::lq
+lq
+::sb
+sb
+::sw
+sw
+::sd
+sd
+::sq
+sq
+// deal with bitwise not
+::~x
+im
+##1.
+BA
+im
+--LI
++B
+BA
+zA
+lb   get register
+RA   put in rbp so we can get it back later
+BR
+im
+--Ar
+cl   'mov rax, <register>'
+im
+--!A
+IA
+im
+##3.
+DA
+im
+--wr
+cl   'not rax'
+BR
+im
+--rA
+cl   'mov <register>, rax'
+jm
+:-rl  next line
+::!A
+!A
+// emit 'put operand 1 in rax'
+::A1
+im
+--LI
+BA
+zA
+lb
+BA
+jm
+:-Ar
+// emit 'put operand 1 in rbx'
+::B1
+im
+--LI
+BA
+zA
+lb
+BA
+jm
+:-Br
+// emit 'put operand 2 in rax'
+::A2
+im
+##3.  skip e.g. "A+="
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+// note: for this we allow numerical operands, e.g. 'C+=d1'
+// we don't need this for ::B2 because it's only used for load instructions
+// (you don't normally need to dereference numbers)
+im
+##41.  'A'
+je
+:-r0
+im
+##42.  'B'
+je
+:-AB
+im
+##43.  'C'
+je
+:-AC
+im
+##44.  'D'
+je
+:-AD
+im
+##49.  'I'
+je
+:-AI
+im
+##4a.  'J'
+je
+:-AJ
+im
+##52.  'R'
+je
+:-AR
+im
+##53.  'S'
+je
+:-AS
+im
+##30.  '0'
+je
+:-A0
+// it's a number
+im
+##3.
+BA
+im
+--LI
++B
+BA
+im
+--nu  convert string to number
+cl
+BA
+jm
+:-im  emit 'mov rax, <number>'
+// emit 'put operand 2 in rbx'
+::B2
+im
+##3.  skip e.g. "A+="
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+jm
+:-Br
+// emit 'put rax in operand 1'
+::1A
+im
+--LI
+BA
+zA
+lb
+BA
+jm
+:-rA
+// verify 3rd char of line is =
+::=?
+im
+##2. offset 2
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+##3d.  ascii '='
+jn
+:-!i bad instruction
+re
+// label definition
+:::l
+// first, check if we're on the second pass.
+im
+--2P
+BA
+zA
+lb
+BA
+zA
+jn     if on second pass,
+:-rl   ignore this (read next line)
+// get current address
+im
+##4. output fd
+JA
+zA
+IA   offset = 0
+im
+##1. whence = SEEK_CUR
+DA
+im
+##8. syscall 8 = lseek
+sy
+BA
+im
+##400000. address of start of file
++B
+DA   put current address in rdx
+im
+--L$
+BA
+lq
+JA
+im
+--LI
+IA
+// copy from rsi to rdi until a newline is reached
+::lc  label copy loop
+BI
+zA
+lb
+BA
+// store in rdi
+AJ
+xc
+sb
+CA put byte in rcx
+// increment rdi,rsi
+BJ
+im
+##1.
++B
+JA
+BI
+im
+##1.
++B
+IA
+BC
+im
+##a.
+jn   if byte we read wasn't a newline,
+:-lc keep looping
+// store address of label in rdi
+AD
+BJ
+sd
+// increment rdi by 4, because we stored an 4-byte number
+im
+##4.
++B
+JA
+// now set L$ to rdi
+im
+--L$
+BA
+AJ
+sq
+// read the next line
+jm
+:-rl
+// label lookup--set rax to address of label in rbx
+::ll
+RB  put ptr to label in rbp
+// if it's the first pass, just return 0
+im
+--2P
+BA
+zA
+lb
+BA
+zA
+je
+:-r0
+// okay it's not the second pass
+im
+##a.
+CA   terminator '\n'
+// use rsi to keep track of position in label list
+im
+--LB
+IA
+::lL
+// first, check if we've reached the end of the label list (rsi == *L$)
+im
+--L$
+BA
+lq
+BI
+je
+:-!l  bad label if we've reached the end
+JR
+im
+--s=
+cl
+BA
+im
+##1.
+je
+:-l=
+// this isn't the label; advance
+::l\
+zA
+BI
+lb
+DA
+// increment rsi
+BI
+im
+##1.
++B
+IA
+// check if that byte we looked at was a newline
+BD
+im
+##a.
+jn
+:-l\  if not, keep looping
+// now we need to increment rsi by another 4 bytes, to skip over the address
+BI
+im
+##4.
++B
+IA
+jm
+:-lL
+re
+::l=
+// label found!
+// first, increment rsi past newline:
+BI
+im
+##1.
++B
+IA
+// then, read dword at rsi into rax
+BI
+zA
+ld
+// we're done!! 
+re
+// set rax to 1/0 depending on whether rsi and rdi have the same string, up to the terminator in rcx.
+::s=
+BI
+zA
+lb
+DA
+BJ
+zA
+lb
+BD
+jn
+:-r0  1st characters are not equal
+BC
+je
+:-r1  we reached the end of the string
+// increment rsi, rdi
+BI
+im
+##1.
++B
+IA
+BJ
+im
+##1.
++B
+JA
+jm
+:-s= keep looping
+// emit "mov rax, immediate" with immediate in rbx
+::im
+// first, emit the prefix
+im
+--IM
+IA
+im
+##2.
+DA
+im
+--wr
+cl
+// put rbx in BU
+im
+--BU
+xc
+sq
+// now write out BU
+im
+--BU
+IA
+im
+##8.  8 bytes
+DA
+jm
+:-wr
+::IM
+im
+// emit "mov rax, label" -- with pointer to label name in rbx
+::l@
+im
+--ll
+cl     look up label name
+BA
+jm
+:-im   write that immediate
+// emit relative label address of label string in rbx.
+::l~
+im
+--ll
+cl    look up label
+RA    store label addr in rbp
+// get current address
+im
+##4. output fd
+JA
+zA
+IA   offset = 0
+im
+##1. whence = SEEK_CUR
+DA
+im
+##8. syscall 8 = lseek
+sy
+BA
+im
+##400004.
++B        add address of start of file + 4 bytes to write relative offset
+nA  negate current address
+BR
++B  get relative address
+BA
+im
+--BU
+xc
+sd  put relative address in ::BU
+im
+--BU   pointer to data
+IA
+im
+##4.   4 bytes long
+DA
+jm
+:-wr
+// literal byte
+::#b
+im
+--LI
+BA
+im
+--nu
+cl
+BA
+// write byte
+im
+--wb
+cl
+jm
+:-rl  next line
+// unconditional jump
+::jj
+// first, write "jmp"
+im
+--JJ
+IA
+im
+##1.
+DA
+im
+--wr
+cl
+// now, write the relative address
+im
+##1. add 1 to line pointer to get pointer to label name
+BA
+im
+--LI
++B
+BA
+im
+--l~
+cl
+// go read the next line
+jm
+:-rl
+::JJ
+jm
+// conditional jump handling
+::?j
+// note, we actually put the first operand in rbx and the second in rax.
+// this is because A>0 is more familiar than 0<A
+im
+##1. add 1 to line pointer to get pointer to 1st operand
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+--Br
+cl     emit "B = first operand"
+im
+##3. add 3 to line pointer to get pointer to 2nd operand
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+--Ar
+cl     emit "A = second operand"
+im
+##2. add 2 to line pointer to get pointer to condition type
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BA
+im
+##3c. '<'
+je
+:-j<
+im
+##3e. '>'
+je
+:-j>
+im
+##3d. '='
+je
+:-j=
+im
+##21. '!'
+je
+:-j!
+im
+##61. 'a'
+je
+:-ja
+im
+##62. 'b'
+je
+:-jb
+jm
+:-!j
+::?@ write address for conditional jump
+im
+##4. add 4 to line pointer to get pointer to label
+BA
+im
+--LI
++B
+BA
+im
+--l~
+cl
+// finally, jump back to read the next line
+jm
+:-rl
+// jump if *greater than* instruction (flipped because operands are flipped)
+::j<
+im
+--J<
+IA
+im
+##5.
+DA
+im
+--wr
+cl
+jm
+:-?@
+// handle jg
+::j>
+im
+--J>
+IA
+im
+##5.
+DA
+im
+--wr
+cl
+jm
+:-?@
+// handle je
+::j=
+im
+--J=
+IA
+im
+##5.
+DA
+im
+--wr
+cl
+jm
+:-?@
+// handle jne
+::j!
+im
+--J!
+IA
+im
+##5.
+DA
+im
+--wr
+cl
+jm
+:-?@
+// handle ja
+::ja
+im
+--Ja
+IA
+im
+##5.
+DA
+im
+--wr
+cl
+jm
+:-?@
+// handle jb
+::jb
+im
+--Jb
+IA
+im
+##5.
+DA
+im
+--wr
+cl
+jm
+:-?@
+::J<
+jg   (operands are flipped)
+::J>
+jl
+::J!
+jn
+::J=
+je
+::Ja
+jb    (operands are flipped)
+::Jb
+ja
+// set A to register. takes rbx='0','A','B','C','D','I','J','R','S', outputs instruction to file
+::Ar
+im
+##30. '0'
+je
+:-A0
+im
+##41. 'A'
+je
+:-r0  just return
+im
+##42. 'B'
+je
+:-AB
+im
+##43. 'C'
+je
+:-AC
+im
+##44. 'D'
+je
+:-AD
+im
+##49. 'I'
+je
+:-AI
+im
+##4a. 'J'
+je
+:-AJ
+im
+##52. 'R'
+je
+:-AR
+im
+##53. 'S'
+je
+:-AS
+jm
+:-!r
+// emit instruction for "set A to 0".
+::A0
+zA    neat trick we can just put the instruction here; it doesn't screw anything up
+im
+--A0
+IA
+im
+##2.
+DA
+jm
+:-wr
+// emit "set A to B"
+::AB
+AB
+im
+--AB
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set A to C"
+::AC
+AC
+im
+--AC
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set A to D"
+::AD
+AD
+im
+--AD
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set A to I"
+::AI
+AI
+im
+--AI
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set A to J"
+::AJ
+AJ
+im
+--AJ
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set A to R"
+::AR
+AR
+im
+--AR
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set A to S"
+::AS
+AS
+im
+--AS
+IA
+im
+##3.
+DA
+jm
+:-wr
+// set B to register. takes rbx='A','B','C','D','I','J','R','S' outputs instruction to file
+::Br
+im
+##41. 'A'
+je
+:-BA
+im
+##42. 'B'
+je
+:-r0  just return
+im
+##43. 'C'
+je
+:-BC
+im
+##44. 'D'
+je
+:-BD
+im
+##49. 'I'
+je
+:-BI
+im
+##4a. 'J'
+je
+:-BJ
+im
+##52. 'R'
+je
+:-BR
+im
+##53. 'S'
+je
+:-BS
+jm
+:-!r
+// emit "set B to A"
+::BA
+BA
+im
+--BA
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set B to C"
+::BC
+BC
+im
+--BC
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set B to D"
+::BD
+BD
+im
+--BD
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set B to I"
+::BI
+BI
+im
+--BI
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set B to J"
+::BJ
+BJ
+im
+--BJ
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set B to R"
+::BR
+BR
+im
+--BR
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set B to S"
+::BS
+BS
+im
+--BS
+IA
+im
+##3.
+DA
+jm
+:-wr
+// set register to A. takes rbx='A','B','C','D','I','J','R','S' outputs instruction to file
+::rA
+im
+##41. 'A'
+je
+:-r0  just return
+im
+##42. 'B'
+je
+:-BA
+im
+##43. 'C'
+je
+:-CA
+im
+##44. 'D'
+je
+:-DA
+im
+##49. 'I'
+je
+:-IA
+im
+##4a. 'J'
+je
+:-JA
+im
+##52. 'R'
+je
+:-RA
+im
+##53. 'S'
+je
+:-SA
+jm
+:-!r
+// emit "set C to A"
+::CA
+im
+--C)
+IA
+im
+##3.
+DA
+jm
+:-wr
+::C)
+CA
+// emit "set D to A"
+::DA
+DA
+im
+--DA
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set I to A"
+::IA
+IA
+im
+--IA
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set J to A"
+::JA
+JA
+im
+--JA
+IA
+im
+##3.
+DA
+jm
+:-wr
+// emit "set R to A"
+::RA
+im
+--R)
+IA
+im
+##3.
+DA
+jm
+:-wr
+::R)
+RA
+// emit "set S to A"
+::SA
+im
+--S)
+IA
+im
+##3.
+DA
+jm
+:-wr
+::S)
+SA
+// handle call :label / call A
+::cl
+im
+##5. add 5 to line pointer to get pointer to label name
+BA
+im
+--LI
++B
+BA
+zA
+lb
+BAs
+im
+##41.
+je
+:-ca   call A
+im
+##5.  add 5 to line pointer to get pointer to label name
+BA
+im
+--LI
++B
+BA
+im
+--l@
+cl
+// intentional fallthrough
+::ca
+// emit 'call rax'
+im
+--Cl  instruction
+IA
+im
+##2.  number of bytes
+DA
+im
+--wr
+cl
+jm
+:-rl  jump back to read next line
+::Cl
+cl
+// handle "str <string>"
+::st
+im
+##4.
+BA
+im
+--LI
++B
+IA   pointer to string
+nA
+BR
++B
+DA   length of string
+im
+--wr  write
+cl
+jm
+:-rl  next line
+// handle "reserve <number>"
+::re
+im
+##8.
+BA
+im
+--LI
++B
+BA
+im
+--nu
+cl
+IA   offset
+im
+##4. output fd
+JA
+im
+##1. whence = SEEK_CUR
+DA
+im
+##8. syscall 8 = lseek
+sy
+jm
+:-rl  next line
+// handle "syscall <number>"
+::sy
+im
+##8.
+BA
+im
+--LI
++B     add 8 to line pointer to get pointer to number
+BA
+im
+--nu
+cl     get syscall number
+BA
+im
+--im
+cl     write 'mov rax, <syscall number>'
+im
+--Sy
+IA
+im
+##2.
+DA
+im
+--wr
+cl     write 'syscall'
+jm
+:-rl   next line
+::Sy
+sy
+// write to output file from rsi..rsi+rdx
+::wr
+im
+##4.
+JA
+im
+##1.
+sy
+re
+// write byte in rbx
+::wb
+// put number in BU
+im
+--BU
+xc
+sb
+// write 1 byte from BU
+im
+--BU
+IA
+im
+##1.
+DA
+jm
+:-wr
+// return 0
+::r0
+zA
+re
+// return 1
+::r1
+im
+##1.
+re
+// return 2
+::r2
+im
+##2.
+re
+// return 3
+::r3
+im
+##3.
+re
+// return 4
+::r4
+im
+##4.
+re
+// return 5
+::r5
+im
+##5.
+re
+// return 6
+::r6
+im
+##6.
+re
+// return 7
+::r7
+im
+##7.
+re
+// exit with code in rax
+::ex
+JA
+im
+##3c.
+sy
+// convert string representation of number starting at rbx and ending with a newline to number in rax
+::nu
+DB
+im
+##1.
++B
+IA  start by storing pointer to actual number (not including base) in rsi
+BD
+zA
+lb
+BA
+im
+##64. ascii 'd'
+je
+:-#d  decimal
+im
+##78. ascii 'x'
+je
+:-#x  hexadecimal
+im
+##27. ascii '
+je
+:-#'  ascii character
+jm
+:-!n  unrecognized number base
+// convert character pointed to by rsi to character code in rax
+::#'
+// make sure there's no trailing characters
+im
+##1.
+BI
++B
+BA
+zA
+lb
+BA
+im
+##a.
+jn
+:-!n
+// okay, no trailing characters, just set rax = *rsi
+BI
+zA
+lb
+re
+// convert newline-terminated decimal representation in rsi to number in rax
+::#d
+zA
+JA   use rdi to store number
+::dL  decimal loop
+BI
+zA
+lb
+BA
+im
+##a.
+je
+:-d$  newline reached
+im
+##30.
+jg
+:-!n  bad digit (<'0')
+im
+##39.
+jl
+:-!n  bad digit (>'9')
+im
+##ffffffffffffffd0.
++B
+CA  put numerical value of digit in rcx
+im
+##a.
+BA
+AJ
++*  multiply by 10
+BC
++B  add digit
+JA
+// increment rsi
+BI
+im
+##1.
++B
+IA
+jm
+:-dL  keep looping
+::d$
+AJ
+re   return
+::#x
+zA
+JA  use rdi to store number
+::xL hexadecimal loop
+BI
+zA
+lb
+BA
+im
+##a.
+je
+:-x$  newline reached
+im
+##30. compare with ascii '0'
+jg
+:-!n  bad if < '0'
+im
+##39.
+jl
+:-af  probably a-f
+im
+##ffffffffffffffd0.  -48
+jm
+:-hX
+::af
+im
+##61. ASCII 'a'
+jg
+:-!n  bad digit (not 0-9, and less than 'a')
+im
+##66. ASCII 'f'
+jl
+:-!n  bad digit (not 0-9, and greater than 'f')
+im
+##ffffffffffffffa9.  -87 (10 - 'a')
+::hX
++B
+BA
+// digit's numerical value now in rbx
+AJ
+<I
+04
++B   add digit
+JA   store away
+// increment rsi
+BI
+im
+##1.
++B
+IA
+jm
+:-xL
+::x$
+AJ
+re  return
+// deal with "return"
+::rt
+im
+--Rt
+IA
+im
+##1.
+DA
+im
+--wr
+cl
+jm
+:-rl  next line
+// deal with "align"
+::al
+// first get current address
+im
+##4. output fd
+JA
+zA
+IA   offset = 0
+im
+##1. whence = SEEK_CUR
+DA
+im
+##8. syscall 8 = lseek
+sy
+BA
+im
+##8.
++B
+BA
+im
+##fffffffffffffff8.
+&B
+// okay rax now holds address we should seek to
+IA  offset
+zA
+DA   whence = SEEK_SET
+im
+##4. output fd
+JA
+im
+##8.  lseek
+sy
+jm
+:-rl  next line
+::Rt
+re
+// deal with "mul"
+::u*
+im
+--+*
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+jm
+:-rl  next line
+// deal with "imul"
+::s*
+im
+---*
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+jm
+:-rl  next line
+// deal with "div"
+::u/
+im
+--+/
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+jm
+:-rl  next line
+// deal with "idiv"
+::s/
+im
+---/
+IA
+im
+##3.
+DA
+im
+--wr
+cl
+jm
+:-rl  next line
+::+*
++*
+::-*
+-*
+::+/
++/
+::-/
+-/
+// bad instruction
+::!i
+im
+--!I error message
+IA
+im
+##10. length
+DA
+jm
+:-er
+// bad number
+::!n
+im
+--!N error message
+IA
+im
+##b. length of error message
+DA
+jm
+:-er
+// bad label
+::!l
+im
+--!L error message
+IA
+im
+##a. length of error message
+DA
+jm
+:-er
+::!r  bad register
+im
+--!R error message
+IA
+im
+##d.
+DA
+jm
+:-er
+::!j  bad jump
+im
+--!J  error message
+IA
+im
+##9.
+DA
+jm
+:-er
+// convert digit rcx of line number to string
+::2s
+DC
+AC
+<I
+02
+CA    multiply rcx by 4 to get shift
+im
+--L#
+BA
+lq
+>C
+BA
+CD    restore rcx as digit index
+im
+##f.
+&B
+BA
+im
+--XD
++B
+BA
+zA
+lb
+DA
+im
+--#S
+BA
+im
+##3.
++B
+BA
+AC
+nA
++B  compute pointer to digit char as  #S + 3 - digit_idx
+BA
+AD
+sb
+re
+::er  error -- write error message in rsi with length in rdx
+im
+##2. stderr
+JA
+im
+##1. write
+sy
+im
+##0.
+CA
+im
+--2s
+cl
+im
+##1.
+CA
+im
+--2s
+cl
+im
+##2.
+CA
+im
+--2s
+cl
+im
+##3.
+CA
+im
+--2s
+cl
+// write line number
+im
+##2. stderr
+JA
+im
+--#S
+IA
+im
+##5. length
+DA
+im
+##1. write
+sy
+im
+##1.
+jm
+:-ex
+// end of file
+::ef
+im
+--2P
+BA
+zA
+lb
+DA
+// set 2P to 1 no matter what
+im
+##1.
+sb
+BD
+zA
+jn    if 2nd pass is not zero,
+:-ex   exit
+// okay we need to do the second pass.
+// rewind file descriptors
+// input
+im
+##3.
+JA
+zA
+IA
+DA
+im
+##8.  lseek
+sy
+// output
+im
+##4.
+JA
+zA
+IA
+DA
+im
+##8.  lseek
+sy
+// set line number to 0
+im
+--L#
+BA
+zA
+sq
+// now go back to do the second pass
+jm
+:-2p
+::2P  second pass?
+00
+::CL  "call" text
+'c
+'a
+'l
+'l
+20
+::SY  "syscall" text
+'s
+'y
+'s
+'c
+'a
+'l
+'l
+20
+::ST  "str" text
+'s
+'t
+'r
+20
+::RE  "reserve" text
+'r
+'e
+'s
+'e
+'r
+'v
+'e
+20
+::RT  "return" text
+'r
+'e
+'t
+'u
+'r
+'n
+\n
+::AL  "align" text
+'a
+'l
+'i
+'g
+'n
+\n
+::U*  "mul" text
+'m
+'u
+'l
+\n
+::S*  "imul" text
+'i
+'m
+'u
+'l
+\n
+::U/  "div" text
+'d
+'i
+'v
+\n
+::S/  "idiv" text
+'i
+'d
+'i
+'v
+\n
+::IF  input file name
+'i
+'n
+'0
+'3
+00
+::OF  output file name
+'o
+'u
+'t
+'0
+'3
+00
+::!N  bad number error message
+'B
+'a
+'d
+20
+'n
+'u
+'m
+'b
+'e
+'r
+20
+::!L  bad label error message
+'B
+'a
+'d
+20
+'l
+'a
+'b
+'e
+'l
+20
+::!R  bad register error message
+'B
+'a
+'d
+20
+'r
+'e
+'g
+'i
+'s
+'t
+'e
+'r
+20
+::!J bad jump error message
+'B
+'a
+'d
+20
+'j
+'u
+'m
+'p
+20
+::!I bad instruction message
+'B
+'a
+'d
+20
+'i
+'n
+'s
+'t
+'r
+'u
+'c
+'t
+'i
+'o
+'n
+20
+::L#  line number
+00
+00
+00
+00
+00
+00
+00
+00
+::#S  line number string
+'0
+'0
+'0
+'0
+\n
+::XD hexadecimal digits
+'0
+'1
+'2
+'3
+'4
+'5
+'6
+'7
+'8
+'9
+'a
+'b
+'c
+'d
+'e
+'f
+::BU  buffer for miscellaneous purposes
+~~
+::LI  line buffer
+~~
+~~
+~~
+~~
+::L$  current end of label list
+--LB
+::LB  labels
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
+~~
