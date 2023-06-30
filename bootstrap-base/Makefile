@@ -7,7 +7,7 @@ all: markdown README.html
 	$(MAKE) -C 04a
 	# don't compile all of 05 because it takes a while
 	$(MAKE) -C 05
-	$(MAKE) -C 06
+	$(MAKE) -C 06 install
 clean:
 	$(MAKE) -C 00 clean
 	$(MAKE) -C 01 clean
