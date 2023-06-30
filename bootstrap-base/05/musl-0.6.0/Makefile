@@ -9,10 +9,10 @@
 #
 
 CC = ../output/bin/tcc
-exec_prefix = output
+exec_prefix = ../output
 bindir = $(exec_prefix)/bin
 
-prefix = output
+prefix = ../output
 includedir = $(prefix)/include
 libdir = $(prefix)/lib
 

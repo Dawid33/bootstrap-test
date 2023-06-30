@@ -6,7 +6,7 @@
 # Your platform. See PLATS for possible values.
 PLAT= generic
 
-CC= ../../../05/output/bin/tcc
+CC= ../../05/output/bin/tcc
 CFLAGS= -Wall -Wextra $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= -lm $(SYSLIBS) $(MYLIBS)
@@ -16,7 +16,7 @@ RANLIB= ranlib
 RM= rm -f
 UNAME= uname
 
-SYSCFLAGS= -I ../../../05/output/include -DLUA_USE_C89
+SYSCFLAGS= -I ../../05/output/include -DLUA_USE_C89
 SYSLDFLAGS=
 SYSLIBS= 
 
