@@ -80,10 +80,12 @@ include/bits/alltypes.h: include/bits/alltypes.h.sh
 	$(CC) $(CFLAGS) $(INC) $(PIC) -c -o $@ $<
 
 lib/libc.so: $(LOBJS)
+	mkdir lib
 	$(CC) $(LDFLAGS) -o $@ $(LOBJS) -lgcc
 	$(OBJCOPY) --weaken $@
 
 lib/libc.a: $(OBJS)
+	mkdir lib
 	rm -f $@
 	$(AR) rc $@ $(OBJS)
 	# $(RANLIB) $@
