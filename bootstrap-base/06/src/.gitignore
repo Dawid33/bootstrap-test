@@ -3,3 +3,6 @@ luac
 *.o
 a.out
 tcc0-files
+lua
+luac
+liblua*
